@@ -1,0 +1,28 @@
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Consumption - Itens do Excel'
+@Metadata.ignorePropagatedAnnotations: true
+define view entity ZC_IS_UPLOAD_ITEMS
+  as projection on ZI_IS_UPLOAD_ITEMS
+{
+  key UploadId,
+  key ItemId,
+  key CodCliente,
+      NomeCliente,
+      Endereco,
+      Bairro,
+      Municipio,
+      Regiao,
+      Vendedor,
+      NomeVendedor,
+      FrequenciaVisitas,
+      SequenciaVisita,
+      DistanciaMt,
+      Latitude,
+      Longitude,
+      DataVisita,
+      CriadoEm,
+      CriadoPor,
+      
+      /* Associations */
+      _UploadRoteiro: redirected to parent ZC_IS_UPLOAD_ROTEIRO
+}
