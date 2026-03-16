@@ -1,0 +1,60 @@
+@AccessControl.authorizationCheck: #MANDATORY
+@EndUserText.label: 'Consumption - Upload de Roteiros'
+@Metadata.allowExtensions: true
+@Metadata.ignorePropagatedAnnotations: false
+@ObjectModel.sapObjectNodeType.name: 'ZTBIS_UP_ROTEIRO'
+@VDM.viewType: #CONSUMPTION
+@Search.searchable: true
+
+define root view entity ZC_IS_UPLOAD_ROTEIRO
+  provider contract transactional_query
+  as projection on ZR_IS_UPLOAD_ROTEIRO
+
+{
+  key UploadID,
+
+      @Consumption.valueHelpDefinition: [ { entity: { name: 'I_CompanyCode', element: 'CompanyCode' } } ]
+      @Search.defaultSearchElement: true
+      @Search.fuzzinessThreshold: 0.8
+      Empresa,
+
+      @Search.defaultSearchElement: true
+      @Search.fuzzinessThreshold: 0.8
+      FileName,
+
+      FileSize,
+
+      @Search.defaultSearchElement: true
+      @Search.fuzzinessThreshold: 0.8
+      FileStatus,
+      CriticalityStatus,
+
+      @Semantics.imageUrl: true
+      Icon,
+
+      @Semantics.largeObject: { mimeType: 'Mimetype',
+                          fileName: 'FileName',
+                          acceptableMimeTypes: [ 'text/csv',
+                                                 'application/vnd.ms-excel',
+                                                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ],
+                          contentDispositionPreference: #INLINE }
+      Attachment,
+      Mimetype,
+      CreatedAt,
+
+      @Search.defaultSearchElement: true
+      @Search.fuzzinessThreshold: 0.8
+      @ObjectModel.text.element: [ 'NameUser' ]
+      @UI.textArrangement: #TEXT_ONLY
+      CreatedBy,
+
+      @ObjectModel.text.element: [ 'NameUser' ]
+      @UI.textArrangement: #TEXT_ONLY
+      LastChangedBy,
+      LastChangedAt,
+      LocalLastChangedAt,
+
+      NameUser,
+      
+      _Items: redirected to composition child ZC_IS_UPLOAD_ITEMS
+}
