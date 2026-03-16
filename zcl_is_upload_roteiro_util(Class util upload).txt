@@ -1,0 +1,203 @@
+CLASS zcl_is_upload_roteiro_util DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    " Tipos e constantes compartilhadas
+    TYPES: BEGIN OF gty_excel,
+             codcliente       TYPE string,
+             codvendedor      TYPE string,
+             frequencia_visit TYPE string,
+             seq_visit        TYPE string,
+             data_visit       TYPE string,
+             latitude         TYPE string,
+             longitude        TYPE string,
+           END OF gty_excel.
+
+    TYPES: BEGIN OF gty_date_conversion,
+             data_formatted TYPE string,  " DD/MM/YYYY
+             data_dats      TYPE dats,    " YYYYMMDD
+           END OF gty_date_conversion.
+
+    TYPES: BEGIN OF gty_customer_data,
+             nome_cliente TYPE string,
+             endereco     TYPE string,
+             bairro       TYPE string,
+             municipio    TYPE string,
+             regiao       TYPE string,
+           END OF gty_customer_data.
+
+    TYPES: BEGIN OF gty_vendor_data,
+             nome_vendedor TYPE string,
+           END OF gty_vendor_data.
+
+    TYPES gt_excel TYPE TABLE OF gty_excel.
+
+    CONSTANTS: BEGIN OF c_excel_headers,
+                 codcliente       TYPE string VALUE `CÓDIGO DO CLIENTE`,
+                 codvendedor      TYPE string VALUE `CÓDIGO DO VENDEDOR`,
+                 frequencia_visit TYPE string VALUE `FREQUÊNCIA DE VISITA`,
+                 seq_visit        TYPE string VALUE `SEQUÊNCIA DA VISITA`,
+                 data_visit       TYPE string VALUE `DATA DA VISITA`,
+                 latitude         TYPE string VALUE `LATITUDE`,
+                 longitude        TYPE string VALUE `LONGITUDE`,
+               END OF c_excel_headers.
+
+    " Métodos estáticos
+    CLASS-METHODS read_excel
+      IMPORTING
+        iv_file_content TYPE xstring
+      EXPORTING
+        et_excel_data   TYPE gt_excel
+        ev_is_valid     TYPE abap_bool
+      RAISING
+        cx_abap_invalid_value.
+
+    CLASS-METHODS validate_excel_headers
+      IMPORTING
+        it_excel           TYPE gt_excel
+      RETURNING
+        VALUE(rv_is_valid) TYPE abap_bool.
+
+    CLASS-METHODS convert_excel_date
+      IMPORTING
+        iv_excel_date        TYPE i
+      RETURNING
+        VALUE(rs_conversion) TYPE gty_date_conversion.
+
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+
+
+CLASS ZCL_IS_UPLOAD_ROTEIRO_UTIL IMPLEMENTATION.
+
+
+  METHOD read_excel.
+
+    DATA lo_table_descr TYPE REF TO cl_abap_tabledescr.
+    DATA lo_struc_descr TYPE REF TO cl_abap_structdescr.
+    DATA lv_no_cols     TYPE i.
+
+    ev_is_valid = abap_true.
+
+    CLEAR et_excel_data.
+
+    TRY.
+        " Criar documento Excel a partir do conteúdo do arquivo
+        DATA(lo_document) = xco_cp_xlsx=>document->for_file_content( iv_file_content = iv_file_content ).
+
+        " Obter acesso de leitura ao documento
+        DATA(lo_xlsx) = lo_document->read_access( ).
+
+        " Obter a primeira planilha
+        DATA(lo_worksheet) = lo_xlsx->get_workbook( )->worksheet->at_position( 1 ).
+
+        " Criar padrão de seleção para ler todas as linhas e colunas
+        DATA(lo_pattern_builder) = xco_cp_xlsx_selection=>pattern_builder->simple_from_to( )->get_pattern( ).
+
+        " Executar operação de leitura e escrever na tabela interna
+        DATA(lo_operation) = lo_worksheet->select( io_pattern = lo_pattern_builder
+        )->row_stream( )->operation->write_to( it_internal_table = REF #( et_excel_data ) ).
+
+        " Definir transformação de valor para string
+        lo_operation->set_value_transformation( xco_cp_xlsx_read_access=>value_transformation->string_value
+        )->if_xco_xlsx_ra_operation~execute( ).
+
+        " Obter descritor da tabela e estrutura
+        lo_table_descr ?= cl_abap_tabledescr=>describe_by_data( p_data = et_excel_data ).
+        lo_struc_descr ?= lo_table_descr->get_table_line_type( ).
+
+        " Obter número de colunas
+        lv_no_cols = lines( lo_struc_descr->components ).
+
+        " Verificar se a tabela contém dados
+        IF et_excel_data[] IS INITIAL.
+          ev_is_valid = abap_false.
+          RETURN.
+        ENDIF.
+
+        " Verificar se a primeira linha contém dados
+        DATA(ls_excel) = VALUE #( et_excel_data[ 1 ] OPTIONAL ).
+        IF ls_excel IS INITIAL.
+          ev_is_valid = abap_false.
+          RETURN.
+        ENDIF.
+
+        " Verificar se o número de colunas é correto (deve ser 7 conforme template)
+        IF lv_no_cols <> 7.
+          ev_is_valid = abap_false.
+          RETURN.
+        ENDIF.
+
+        ev_is_valid = abap_true.
+
+      CATCH cx_static_check.
+        ev_is_valid = abap_false.
+
+      CATCH cx_root.
+        ev_is_valid = abap_false.
+
+    ENDTRY.
+
+  ENDMETHOD.
+
+
+  METHOD validate_excel_headers.
+
+    rv_is_valid = abap_true.
+
+    DATA(ls_header_excel) = it_excel[ 1 ].
+
+    " Validar cada coluna do cabeçalho
+    IF    ls_header_excel-codcliente       <> c_excel_headers-codcliente
+       OR ls_header_excel-codvendedor      <> c_excel_headers-codvendedor
+       OR ls_header_excel-frequencia_visit <> c_excel_headers-frequencia_visit
+       OR ls_header_excel-seq_visit        <> c_excel_headers-seq_visit
+       OR ls_header_excel-data_visit       <> c_excel_headers-data_visit
+       OR ls_header_excel-latitude         <> c_excel_headers-latitude
+       OR ls_header_excel-longitude        <> c_excel_headers-longitude.
+
+      rv_is_valid = abap_false.
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD convert_excel_date.
+
+    DATA: lv_base_date TYPE d VALUE '18991230',  " 30/12/1899 (base do Excel)
+          lv_abap_date TYPE d.
+
+    CLEAR rs_conversion.
+
+    " Validar entrada
+    IF iv_excel_date <= 0.
+      rs_conversion-data_formatted = ''.
+      rs_conversion-data_dats = '00000000'.
+      RETURN.
+    ENDIF.
+
+    TRY.
+        " Converter número de série para data ABAP (YYYYMMDD)
+        lv_abap_date = lv_base_date + iv_excel_date.
+
+        " Retornar data em formato DATS
+        rs_conversion-data_dats = lv_abap_date.
+
+        rs_conversion-data_formatted = |{ lv_abap_date+6(2) }/{ lv_abap_date+4(2) }/{ lv_abap_date+0(4) }|.
+
+      CATCH cx_root.
+        " Em caso de erro, retornar datas vazias
+        rs_conversion-data_formatted = ''.
+        rs_conversion-data_dats = '00000000'.
+
+    ENDTRY.
+
+
+  ENDMETHOD.
+ENDCLASS.
