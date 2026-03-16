@@ -1,0 +1,76 @@
+CLASS zcl_is_upload_cleanup DEFINITION
+  PUBLIC
+  FINAL
+  CREATE PUBLIC .
+
+  PUBLIC SECTION.
+
+    INTERFACES if_oo_adt_classrun .
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+
+
+CLASS ZCL_IS_UPLOAD_CLEANUP IMPLEMENTATION.
+
+
+  METHOD if_oo_adt_classrun~main.
+
+
+      DATA: lv_deleted_count TYPE i,
+          lv_total_count   TYPE i.
+
+    TRY.
+
+        " 1. Contar quantos registros existem antes de deletar
+        SELECT COUNT(*) FROM ztbis_agenda_ast INTO @lv_total_count.
+
+        IF lv_total_count = 0.
+          out->write( |Nenhum registro encontrado em ztbis_agenda_ast. Nada a fazer.| ).
+          RETURN.
+        ENDIF.
+
+        out->write( |═══════════════════════════════════════════════════════════════| ).
+        out->write( |LIMPEZA DE DADOS - ztbis_agenda_ast| ).
+        out->write( |═══════════════════════════════════════════════════════════════| ).
+        out->write( | | ).
+        out->write( |Total de registros encontrados: { lv_total_count }| ).
+        out->write( | | ).
+        out->write( |⚠️  ATENÇÃO: Todos os { lv_total_count } registros serão DELETADOS!| ).
+        out->write( | | ).
+
+        " 2. Deletar todos os registros
+        DELETE FROM ztbis_agenda_ast.
+
+        " 3. Contar quantos foram deletados
+        lv_deleted_count = sy-dbcnt.
+
+        out->write( |✅ Deletados com sucesso: { lv_deleted_count } registros| ).
+        out->write( | | ).
+
+        " 4. Verificar se ficou vazio
+        SELECT COUNT(*) FROM ztbis_agenda_ast INTO @DATA(lv_remaining).
+
+        IF lv_remaining = 0.
+          out->write( |✅ Tabela ztbis_agenda_ast agora está VAZIA| ).
+        ELSE.
+          out->write( |⚠️  AVISO: Ainda existem { lv_remaining } registros na tabela| ).
+        ENDIF.
+
+        out->write( | | ).
+        out->write( |═══════════════════════════════════════════════════════════════| ).
+        out->write( |Operação concluída com sucesso!| ).
+        out->write( |═══════════════════════════════════════════════════════════════| ).
+
+      CATCH cx_sy_sql_error INTO DATA(lx_sql_error).
+        out->write( |❌ ERRO SQL: { lx_sql_error->get_text( ) }| ).
+
+      CATCH cx_root INTO DATA(lx_error).
+        out->write( |❌ ERRO: { lx_error->get_text( ) }| ).
+
+    ENDTRY.
+
+
+  ENDMETHOD.
+ENDCLASS.
