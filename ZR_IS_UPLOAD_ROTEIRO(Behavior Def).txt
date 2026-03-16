@@ -1,0 +1,108 @@
+managed implementation in class ZBP_R_IS_UPLOAD_ROTEIRO unique;
+strict ( 2 );
+with draft;
+extensible;
+define behavior for ZR_IS_UPLOAD_ROTEIRO alias UploadRoteiro
+persistent table ztbis_up_roteiro
+extensible
+draft table ztbis_up_rtiro_d
+etag master LocalLastChangedAt
+lock master total etag LastChangedAt
+authorization master ( global )
+with additional save
+{
+
+  field ( numbering : managed ) UploadID;
+
+  field ( mandatory ) Empresa, Attachment, Mimetype;
+
+  field ( readonly )
+  UploadID,
+  CreatedAt,
+  CreatedBy,
+  LastChangedBy,
+  LastChangedAt,
+  LocalLastChangedAt;
+
+  create;
+  update;
+  delete;
+
+  association _Items { create; with draft; }
+
+  draft action Activate optimized;
+  draft action Discard;
+  draft action Edit;
+  draft action Resume;
+  draft determine action Prepare;
+
+  determination validateTemplate on save { create; field Attachment; }
+  determination calculationFileSize on modify { create; field Attachment; }
+  determination processItems on modify { create; field Attachment; }
+
+  action downloadTemplate result [1] $self;
+
+  side effects
+  {
+
+    field Attachment affects field FileStatus;
+
+  }
+
+  mapping for ztbis_up_roteiro corresponding extensible
+    {
+      UploadID           = upload_id;
+      Empresa            = empresa;
+      FileName           = file_name;
+      FileSize           = file_size;
+      FileStatus         = file_status;
+      Attachment         = attachment;
+      Mimetype           = mimetype;
+      CreatedAt          = created_at;
+      CreatedBy          = created_by;
+      LastChangedBy      = last_changed_by;
+      LastChangedAt      = last_changed_at;
+      LocalLastChangedAt = local_last_changed_at;
+    }
+
+}
+
+
+define behavior for ZI_IS_UPLOAD_ITEMS alias Items
+persistent table ztbis_up_items
+extensible
+draft table ztbis_up_items_d
+lock dependent by _UploadRoteiro
+authorization dependent by _UploadRoteiro
+
+{
+  field ( numbering : managed ) ItemID;
+  field ( readonly ) UploadId, ItemID, CriadoPor, CriadoEm;
+
+  update;
+  delete;
+
+  association _UploadRoteiro { with draft; }
+
+  mapping for ztbis_up_items corresponding extensible
+    {
+      UploadId          = upload_id;
+      ItemId            = item_id;
+      CodCliente        = cod_cliente;
+      NomeCliente       = nome_cliente;
+      Endereco          = endereco;
+      Bairro            = bairro;
+      Municipio         = municipio;
+      Regiao            = regiao;
+      Vendedor          = vendedor;
+      NomeVendedor      = nome_vendedor;
+      FrequenciaVisitas = frequencia_visitas;
+      SequenciaVisita   = sequencia_visita;
+      DistanciaMt       = distancia_mt;
+      Latitude          = latitude;
+      Longitude         = longitude;
+      DataVisita        = data_visita;
+      CriadoEm          = created_at;
+      CriadoPor         = created_by;
+    }
+}
