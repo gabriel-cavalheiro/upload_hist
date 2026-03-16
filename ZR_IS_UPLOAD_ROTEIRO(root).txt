@@ -1,0 +1,49 @@
+@AccessControl.authorizationCheck: #MANDATORY
+@EndUserText.label: 'Composite - Upload de Roteiros'
+@ObjectModel.sapObjectNodeType.name: 'ZTBIS_UP_ROTEIRO'
+@VDM.viewType: #COMPOSITE
+
+define root view entity ZR_IS_UPLOAD_ROTEIRO
+  as select from ztbis_up_roteiro
+  composition [0..*] of ZI_IS_UPLOAD_ITEMS as  _Items
+  association [0..1] to I_BusinessUserBasic as _User on $projection.CreatedBy = _User.UserID
+{
+  key upload_id                     as UploadID,
+
+      empresa                       as Empresa,
+      file_name                     as FileName,
+      file_size                     as FileSize,
+      file_status                   as FileStatus,
+
+      case file_status
+      when 'Template com erro'          then 1
+      when 'Nenhum arquivo selecionado' then 2
+      when 'Excel Carregado'            then 3
+      else 0
+      end                           as CriticalityStatus,
+
+      'sap-icon://excel-attachment' as Icon,
+
+      attachment                    as Attachment,
+
+      @Semantics.mimeType: true
+      mimetype                      as Mimetype,
+
+      @Semantics.systemDateTime.createdAt: true
+      created_at                    as CreatedAt,
+
+      @Semantics.user.createdBy: true
+      created_by                    as CreatedBy,
+
+      @Semantics.user.lastChangedBy: true
+      last_changed_by               as LastChangedBy,
+
+      @Semantics.systemDateTime.lastChangedAt: true
+      last_changed_at               as LastChangedAt,
+
+      @Semantics.systemDateTime.localInstanceLastChangedAt: true
+      local_last_changed_at         as LocalLastChangedAt,
+
+      _User.PersonFullName          as NameUser,
+      _Items 
+}
