@@ -1,0 +1,30 @@
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Basic - Itens do Excel'
+@VDM.viewType: #BASIC
+
+define view entity ZI_IS_UPLOAD_ITEMS
+  as select from ztbis_up_items
+  association to parent ZR_IS_UPLOAD_ROTEIRO as _UploadRoteiro on $projection.UploadId = _UploadRoteiro.UploadID
+{
+  key upload_id          as UploadId,
+  key item_id            as ItemId,
+  key cod_cliente        as CodCliente,
+      nome_cliente       as NomeCliente,
+      endereco           as Endereco,
+      bairro             as Bairro,
+      municipio          as Municipio,
+      regiao             as Regiao,
+      vendedor           as Vendedor,
+      nome_vendedor      as NomeVendedor,
+      frequencia_visitas as FrequenciaVisitas,
+      sequencia_visita   as SequenciaVisita,
+      distancia_mt       as DistanciaMt,
+      latitude           as Latitude,
+      longitude          as Longitude,
+      data_visita        as DataVisita,
+      created_at         as CriadoEm,
+      created_by         as CriadoPor,
+      
+      _UploadRoteiro
+}
