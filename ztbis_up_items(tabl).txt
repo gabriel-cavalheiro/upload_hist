@@ -1,0 +1,41 @@
+@EndUserText.label : 'Ins. Sales - Tabela de Items do Excel'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table ztbis_up_items {
+
+  key client         : abap.clnt not null;
+  key upload_id      : sysuuid_x16 not null;
+  key item_id        : sysuuid_x16 not null;
+  @EndUserText.label : 'Cóigo Cliente'
+  key cod_cliente    : abap.char(10) not null;
+  @EndUserText.label : 'Nome do Cliente'
+  nome_cliente       : abap.char(100);
+  @EndUserText.label : 'Endereço'
+  endereco           : abap.char(100);
+  @EndUserText.label : 'Bairro'
+  bairro             : abap.char(50);
+  @EndUserText.label : 'Município'
+  municipio          : abap.char(50);
+  regiao             : regio;
+  @EndUserText.label : 'Código do Vendedor'
+  vendedor           : abap.char(10);
+  @EndUserText.label : 'Nome do Vendedor'
+  nome_vendedor      : abap.char(100);
+  @EndUserText.label : 'Frequência de Visitas'
+  frequencia_visitas : abap.char(2);
+  @EndUserText.label : 'Sequência da Visita'
+  sequencia_visita   : abap.char(3);
+  @EndUserText.label : 'Distancia Mt'
+  distancia_mt       : abap.dec(10,2);
+  @EndUserText.label : 'Latitude'
+  latitude           : abap.dec(15,12);
+  @EndUserText.label : 'Longitude'
+  longitude          : abap.dec(15,12);
+  @EndUserText.label : 'Data da Visita'
+  data_visita        : abap.dats;
+  created_at         : abp_creation_tstmpl;
+  created_by         : abp_creation_user;
+
+}
