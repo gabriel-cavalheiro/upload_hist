@@ -1,0 +1,586 @@
+CLASS zbp_r_is_upload_roteiro DEFINITION
+  PUBLIC
+  ABSTRACT
+  FINAL
+  FOR BEHAVIOR OF zr_is_upload_roteiro .
+
+  PUBLIC SECTION.
+
+    TYPES: BEGIN OF gty_excel,
+             codcliente       TYPE string,
+             codvendedor      TYPE string,
+             frequencia_visit TYPE string,
+             seq_visit        TYPE string,
+             data_visit       TYPE string,
+             latitude         TYPE string,
+             longitude        TYPE string,
+           END OF gty_excel.
+
+    TYPES: gt_excel TYPE TABLE OF gty_excel.
+    TYPES: gt_keys TYPE TABLE FOR DETERMINATION zr_is_upload_roteiro\\uploadroteiro~validatetemplate.
+
+    CONSTANTS c_msg_none     TYPE string VALUE `Nenhum arquivo selecionado`.
+    CONSTANTS c_msg_uploaded TYPE string VALUE `Excel Carregado`.
+    CONSTANTS c_msg_error    TYPE string VALUE `Template com erro`.
+
+  PROTECTED SECTION.
+  PRIVATE SECTION.
+ENDCLASS.
+
+
+
+CLASS ZBP_R_IS_UPLOAD_ROTEIRO IMPLEMENTATION.
+ENDCLASS.
+
+
+CLASS lsc_zr_is_upload_roteiro DEFINITION INHERITING FROM cl_abap_behavior_saver.
+
+  PROTECTED SECTION.
+    METHODS save_modified REDEFINITION.
+
+ENDCLASS.
+
+
+CLASS lsc_zr_is_upload_roteiro IMPLEMENTATION.
+  METHOD save_modified.
+    DATA lt_historico TYPE TABLE OF ztbis_hist_rot.
+
+    " 1. Iterar sobre os registros criados
+    LOOP AT create-uploadroteiro ASSIGNING FIELD-SYMBOL(<ls_new>).
+
+      " 2. Ler os itens filhos (_Items) que foram criados
+      READ ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+           ENTITY UploadRoteiro BY \_Items
+           ALL FIELDS
+           WITH VALUE #( ( %key = <ls_new>-%key ) )
+           RESULT DATA(lt_items).
+
+      " 3. Se não houver itens, pular
+      IF lt_items IS INITIAL.
+        CONTINUE.
+      ENDIF.
+
+      " 4. Montar a tabela de histórico a partir dos itens
+      LOOP AT lt_items INTO DATA(ls_item).
+
+        APPEND VALUE #( upload_id          = <ls_new>-UploadID
+                        created_at         = <ls_new>-CreatedAt
+                        created_by         = <ls_new>-CreatedBy
+                        cliente            = ls_item-CodCliente
+                        nome_cliente       = ls_item-NomeCliente
+                        endereco           = ls_item-Endereco
+                        bairro             = ls_item-Bairro
+                        municipio          = ls_item-Municipio
+                        regiao             = ls_item-Regiao
+                        vendedor           = ls_item-Vendedor
+                        nome_vendedor      = ls_item-NomeVendedor
+                        assunto            = 'VISITA PROGRAMADA'
+                        frequencia_visitas = ls_item-FrequenciaVisitas
+                        sequencia_visita   = ls_item-SequenciaVisita
+                        data_visita        = ls_item-DataVisita
+                        latitude           = ls_item-Latitude
+                        longitude          = ls_item-Longitude
+                        empresa            = <ls_new>-Empresa )
+               TO lt_historico.
+
+      ENDLOOP.
+
+    ENDLOOP.
+
+    " 5. Se houver registros de histórico, inseri-los na tabela ztbis_hist_rot
+    IF lt_historico IS NOT INITIAL.
+      MODIFY ztbis_hist_rot FROM TABLE @lt_historico.
+    ENDIF.
+  ENDMETHOD.
+ENDCLASS.
+
+
+CLASS lhc_zr_is_upload_roteiro DEFINITION INHERITING FROM cl_abap_behavior_handler.
+
+  PRIVATE SECTION.
+    CONSTANTS: BEGIN OF c_excel_headers,
+                 codcliente       TYPE string VALUE `CÓDIGO DO CLIENTE`,
+                 codvendedor      TYPE string VALUE `CÓDIGO DO VENDEDOR`,
+                 frequencia_visit TYPE string VALUE `FREQUÊNCIA DE VISITA`,
+                 seq_visit        TYPE string VALUE `SEQUÊNCIA DA VISITA`,
+                 data_visit       TYPE string VALUE `DATA DA VISITA`,
+                 latitude         TYPE string VALUE `LATITUDE`,
+                 longitude        TYPE string VALUE `LONGITUDE`,
+               END OF c_excel_headers.
+
+    TYPES: BEGIN OF gty_excel,
+             codcliente       TYPE string,
+             codvendedor      TYPE string,
+             frequencia_visit TYPE string,
+             seq_visit        TYPE string,
+             data_visit       TYPE string,
+             latitude         TYPE string,
+             longitude        TYPE string,
+           END OF gty_excel.
+
+    TYPES gt_excel TYPE TABLE OF zbp_r_is_upload_roteiro=>gty_excel.
+
+    TYPES gt_keys  TYPE TABLE FOR DETERMINATION zr_is_upload_roteiro\\uploadroteiro~validatetemplate.
+
+    METHODS get_global_authorizations FOR GLOBAL AUTHORIZATION
+      IMPORTING
+      REQUEST requested_authorizations FOR UploadRoteiro
+      RESULT result.
+
+    METHODS validateTemplate FOR DETERMINE ON SAVE
+      IMPORTING keys FOR UploadRoteiro~validateTemplate.
+
+    METHODS downloadTemplate FOR MODIFY
+      IMPORTING keys FOR ACTION UploadRoteiro~downloadTemplate RESULT result.
+
+    METHODS calculationFileSize FOR DETERMINE ON MODIFY
+      IMPORTING keys FOR UploadRoteiro~calculationFileSize.
+
+    METHODS processItems FOR DETERMINE ON MODIFY
+      IMPORTING keys FOR UploadRoteiro~processItems.
+
+    METHODS ReadExcel
+      IMPORTING iv_file_content TYPE xstring
+      EXPORTING et_excel_data   TYPE gt_excel
+                ev_is_valid     TYPE abap_bool
+      RAISING   cx_abap_invalid_value.
+
+    METHODS validateExcelHeaders
+      IMPORTING it_excel           TYPE gt_excel
+      RETURNING VALUE(rv_is_valid) TYPE abap_bool.
+
+ENDCLASS.
+
+
+CLASS lhc_zr_is_upload_roteiro IMPLEMENTATION.
+  METHOD get_global_authorizations.
+  ENDMETHOD.
+
+  METHOD validateTemplate.
+    DATA lt_update TYPE TABLE FOR UPDATE zr_is_upload_roteiro.
+    DATA lt_excel  TYPE STANDARD TABLE OF gty_excel.
+    DATA lv_status TYPE string.
+
+    READ ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+         ENTITY UploadRoteiro
+         ALL FIELDS
+         WITH CORRESPONDING #( keys )
+         RESULT DATA(lt_files).
+
+    DATA(ls_file) = VALUE #( lt_files[ 1 ] OPTIONAL ).
+
+    " Se não há arquivo
+    IF ls_file-Attachment IS INITIAL.
+
+      lv_status = zbp_r_is_upload_roteiro=>c_msg_none.
+
+      APPEND VALUE #( %tky = ls_file-%tky
+                      %msg = new_message_with_text( severity = if_abap_behv_message=>severity-warning
+                                                    text     = 'Nenhum arquivo anexado' ) )
+             TO reported-uploadroteiro.
+
+    ELSE.
+
+      " Há arquivo - validar
+      DATA(lv_is_valid) = abap_true.
+
+      TRY.
+          ReadExcel( EXPORTING iv_file_content = ls_file-Attachment
+                     IMPORTING et_excel_data   = lt_excel
+                               ev_is_valid     = lv_is_valid ).
+
+        CATCH cx_abap_invalid_value.
+          lv_is_valid = abap_false.
+
+      ENDTRY.
+
+      " Validar cabeçalhos se a leitura foi bem-sucedida
+      IF lv_is_valid = abap_true.
+        lv_is_valid = validateExcelHeaders( it_excel = lt_excel ).
+      ENDIF.
+
+      " Definir status baseado no resultado da validação
+      IF lv_is_valid = abap_false.
+
+        lv_status = zbp_r_is_upload_roteiro=>c_msg_error.
+
+        APPEND VALUE #( %tky = ls_file-%tky
+                        %msg = new_message_with_text( severity = if_abap_behv_message=>severity-error
+                                                      text     = 'Arquivo com template inválido' ) )
+               TO reported-uploadroteiro.
+
+      ELSE.
+
+        lv_status = zbp_r_is_upload_roteiro=>c_msg_uploaded.
+
+        APPEND VALUE #( %tky = ls_file-%tky
+                        %msg = new_message_with_text( severity = if_abap_behv_message=>severity-success
+                                                      text     = 'Arquivo processado com sucesso' ) )
+               TO reported-uploadroteiro.
+
+      ENDIF.
+
+    ENDIF.
+
+    " Atualizar o status do arquivo (após toda validação)
+    APPEND VALUE #( %tky                = ls_file-%tky
+                    %data-FileStatus    = lv_status
+                    %control-FileStatus = if_abap_behv=>mk-on )
+           TO lt_update.
+
+    IF lt_update IS NOT INITIAL.
+      MODIFY ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+             ENTITY UploadRoteiro
+             UPDATE FIELDS ( FileStatus )
+             WITH lt_update.
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD ReadExcel.
+    TRY.
+        " Chamar classe utilitária
+        zcl_is_upload_roteiro_util=>read_excel( EXPORTING iv_file_content = iv_file_content
+                                                IMPORTING et_excel_data   = et_excel_data
+                                                          ev_is_valid     = ev_is_valid ).
+
+      CATCH cx_abap_invalid_value.
+        ev_is_valid = abap_false.
+
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD validateexcelheaders.
+    rv_is_valid = zcl_is_upload_roteiro_util=>validate_excel_headers( it_excel = it_excel ).
+  ENDMETHOD.
+
+  METHOD downloadTemplate.
+    DATA lt_template TYPE TABLE OF gty_excel.
+
+    TRY.
+        " Template Cabeçalho
+        APPEND VALUE #( codcliente       = c_excel_headers-codcliente
+                        codvendedor      = c_excel_headers-codvendedor
+                        frequencia_visit = c_excel_headers-frequencia_visit
+                        seq_visit        = c_excel_headers-seq_visit
+                        data_visit       = c_excel_headers-data_visit
+                        latitude         = c_excel_headers-latitude
+                        longitude        = c_excel_headers-longitude )
+               TO lt_template.
+
+        " Cria excel azio
+        DATA(lo_write_access) = xco_cp_xlsx=>document->empty( )->write_access( ).
+        DATA(lo_worksheet_template) = lo_write_access->get_workbook( )->worksheet->at_position( 1 ).
+
+        " Defini padrão de seleção (COLUNAS A ATÉ G, LINHA 1)
+        DATA(lo_selection_pattern) = xco_cp_xlsx_selection=>pattern_builder->simple_from_to(
+          )->from_column( xco_cp_xlsx=>coordinate->for_alphabetic_value( 'A' )
+          )->to_column( xco_cp_xlsx=>coordinate->for_alphabetic_value( 'G' )
+          )->from_row( xco_cp_xlsx=>coordinate->for_numeric_value( 1 )
+          )->get_pattern( ).
+
+        lo_worksheet_template->select( lo_selection_pattern
+          )->row_stream(
+          )->operation->write_from( REF #( lt_template )
+          )->execute( ).
+
+        DATA(lv_content_template) = lo_write_access->get_file_content( ).
+
+        MODIFY ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+               ENTITY UploadRoteiro
+               UPDATE FROM VALUE #(
+                   FOR ls_key IN keys
+                   ( %tky                = ls_key-%tky
+                     Attachment          = lv_content_template
+                     FileName            = 'template_roteiro.xlsx'
+                     Mimetype            = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                     %control-Attachment = if_abap_behv=>mk-on
+                     %control-FileName   = if_abap_behv=>mk-on
+                     %control-Mimetype   = if_abap_behv=>mk-on ) )
+               " TODO: variable is assigned but never used (ABAP cleaner)
+               MAPPED DATA(ls_mapped_update)
+               " TODO: variable is assigned but never used (ABAP cleaner)
+               REPORTED DATA(ls_reported_update)
+               " TODO: variable is assigned but never used (ABAP cleaner)
+               FAILED DATA(ls_failed_update).
+
+        READ ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+             ENTITY UploadRoteiro
+             ALL FIELDS WITH CORRESPONDING #( keys )
+             RESULT DATA(lt_upload).
+
+        result = VALUE #( FOR ls_upload IN lt_upload
+                          ( %tky   = ls_upload-%tky
+                            %param = ls_upload ) ).
+
+        reported = VALUE #(
+            BASE reported
+            uploadroteiro = VALUE #( ( %tky = keys[ 1 ]-%tky
+                                       %msg = new_message_with_text(
+                                                  severity = if_abap_behv_message=>severity-success
+                                                  text     = 'Template disponível para download' ) ) ) ).
+
+      CATCH cx_static_check INTO DATA(lx_error). " TODO: variable is assigned but never used (ABAP cleaner)
+        reported = VALUE #( BASE reported
+                            uploadroteiro = VALUE #( ( %tky = keys[ 1 ]-%tky
+                                                       %msg = new_message_with_text(
+                                                                  severity = if_abap_behv_message=>severity-error
+                                                                  text     = 'Erro ao gerar template Excel' ) ) ) ).
+
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD calculationFileSize.
+
+    DATA lt_filesize TYPE TABLE FOR UPDATE zr_is_upload_roteiro\\UploadRoteiro.
+
+    READ ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+         ENTITY UploadRoteiro
+         FIELDS ( UploadID Attachment )
+         WITH CORRESPONDING #( keys )
+         RESULT DATA(lt_file).
+
+    IF lt_file IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    " Processar cada anexo
+    LOOP AT lt_file ASSIGNING FIELD-SYMBOL(<fs_file>).
+
+      DATA lv_size TYPE i.
+
+      IF <fs_file>-Attachment IS NOT INITIAL.
+        lv_size = xstrlen( <fs_file>-Attachment ).
+      ELSE.
+        lv_size = 0.
+      ENDIF.
+
+      " Converter para KB
+      lv_size = ceil( lv_size / 1024 ).
+
+      IF lv_size > 1000. " 20MB in bytes.
+
+        lv_size = ceil( lv_size / 1024 ).
+
+        APPEND VALUE #( %tky = <fs_file>-%tky
+                        %msg = new_message_with_text( severity = if_abap_behv_message=>severity-error
+                                                      text     = 'Arquivo deve ter menos de 20MB' ) )
+               TO reported-uploadroteiro.
+        RETURN.
+      ELSE.
+
+        APPEND VALUE #( %tky     = <fs_file>-%tky
+                        FileSize = lv_size ) TO lt_filesize.
+
+      ENDIF.
+    ENDLOOP.
+
+    " Atualizar os registros se houver alterações
+    IF lt_filesize IS NOT INITIAL.
+
+      MODIFY ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+             ENTITY UploadRoteiro
+             UPDATE FIELDS ( FileSize )
+             WITH lt_filesize
+             REPORTED DATA(lt_reported).
+
+      reported = CORRESPONDING #( DEEP lt_reported ).
+
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD processItems.
+
+    DATA: lt_excel        TYPE TABLE OF zbp_r_is_upload_roteiro=>gty_excel,
+          lv_is_valid     TYPE abap_bool,
+          lt_items_data   TYPE TABLE OF ztbis_up_items,  " Tabela temporária com dados enriquecidos
+          lt_items_create TYPE TABLE FOR CREATE zr_is_upload_roteiro\_Items.
+
+    " 1. Ler a entidade principal para obter o anexo (Attachment)
+    READ ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+      ENTITY UploadRoteiro
+      ALL FIELDS
+      WITH CORRESPONDING #( keys )
+      RESULT DATA(lt_uploads).
+
+    LOOP AT lt_uploads INTO DATA(ls_upload).
+
+      " Pular se não houver anexo
+      IF ls_upload-Attachment IS INITIAL.
+        CONTINUE.
+      ENDIF.
+
+
+      " Limpar tabelas para cada novo upload
+      CLEAR: lt_excel, lt_items_data, lt_items_create.
+
+      TRY.
+          " 2. Converter o Excel (xstring) para uma tabela interna e validar cabeçalhos
+          zcl_is_upload_roteiro_util=>read_excel(
+            EXPORTING iv_file_content = ls_upload-Attachment
+            IMPORTING et_excel_data   = lt_excel
+                      ev_is_valid     = lv_is_valid ).
+
+          IF lv_is_valid = abap_true.
+            lv_is_valid = zcl_is_upload_roteiro_util=>validate_excel_headers( it_excel = lt_excel ).
+          ENDIF.
+
+          " 3. Se o Excel for válido, processar as linhas
+          IF lv_is_valid = abap_true.
+
+            " 4. Iterar sobre os dados do Excel (a partir da segunda linha)
+            LOOP AT lt_excel INTO DATA(ls_excel_row) FROM 2.
+
+
+              IF ls_excel_row-codcliente       IS INITIAL
+             AND ls_excel_row-codvendedor      IS INITIAL
+             AND ls_excel_row-frequencia_visit IS INITIAL
+             AND ls_excel_row-seq_visit        IS INITIAL
+             AND ls_excel_row-data_visit       IS INITIAL
+             AND ls_excel_row-latitude         IS INITIAL
+             AND ls_excel_row-longitude        IS INITIAL.
+                CONTINUE.
+              ENDIF.
+
+              DATA ls_item_data TYPE ztbis_up_items.
+
+              " 5. Converter dados
+              ls_item_data-upload_id          = ls_upload-UploadID.
+              ls_item_data-cod_cliente        = |{ ls_excel_row-codcliente ALPHA = IN }|.
+              ls_item_data-vendedor           = ls_excel_row-codvendedor.
+              ls_item_data-frequencia_visitas = ls_excel_row-frequencia_visit.
+              ls_item_data-sequencia_visita   = ls_excel_row-seq_visit.
+              ls_item_data-data_visita        = zcl_is_upload_roteiro_util=>convert_excel_date(
+                                                  CONV i( ls_excel_row-data_visit ) )-data_dats.
+              ls_item_data-latitude           = ls_excel_row-latitude.
+              ls_item_data-longitude          = ls_excel_row-longitude.
+
+              " 6. Enriquecer com dados do cliente (I_Customer)
+              TRY.
+                  SELECT SINGLE BPCustomerFullName, StreetName, DistrictName, CityName, Region
+                    FROM I_Customer
+                    WHERE Customer = @ls_item_data-cod_cliente
+                    INTO @DATA(ls_customer).
+
+                  IF sy-subrc = 0.
+                    ls_item_data-nome_cliente = ls_customer-BPCustomerFullName.
+                    ls_item_data-endereco     = ls_customer-StreetName.
+                    ls_item_data-bairro       = ls_customer-DistrictName.
+                    ls_item_data-municipio    = ls_customer-CityName.
+                    ls_item_data-regiao       = ls_customer-Region.
+                  ENDIF.
+                CATCH cx_sy_sql_error.
+                  " Erro na busca do cliente é ignorado, campos ficam em branco
+              ENDTRY.
+
+              " 7. Enriquecer com dados do vendedor (I_BusinessPartner)
+              TRY.
+                  SELECT SINGLE BusinessPartnerFullName
+                    FROM I_BusinessPartner
+                    WHERE BusinessPartner = @ls_item_data-vendedor
+                    INTO @DATA(lv_vendor).
+
+                  IF sy-subrc = 0.
+                    ls_item_data-nome_vendedor = lv_vendor.
+                  ENDIF.
+                CATCH cx_sy_sql_error.
+                  " Erro na busca do vendedor é ignorado, campo fica em branco
+              ENDTRY.
+
+              " 8. Adicionar o item enriquecido à tabela temporária
+              APPEND ls_item_data TO lt_items_data.
+
+            ENDLOOP.
+
+            " 9. Montar lt_items_create com o padrão correto de %cid_ref + %target
+            IF lt_items_data IS NOT INITIAL.
+
+              lt_items_create = VALUE #(
+                ( UploadID  = ls_upload-UploadID
+                  %is_draft = keys[ 1 ]-%is_draft
+                  %target   = VALUE #( FOR ls_item IN lt_items_data INDEX INTO lv_index
+                                       ( %cid      = |{ lv_index }|
+                                         %is_draft = ls_upload-%is_draft
+                                         %data     = VALUE #(
+                                             ItemID              = |{ lv_index WIDTH = 10 ALIGN = RIGHT PAD = '0' }|
+                                             UploadID            = ls_item-upload_id
+                                             CodCliente          = ls_item-cod_cliente
+                                             NomeCliente         = ls_item-nome_cliente
+                                             Endereco            = ls_item-endereco
+                                             Bairro              = ls_item-bairro
+                                             Municipio           = ls_item-municipio
+                                             Regiao              = ls_item-regiao
+                                             Vendedor            = ls_item-vendedor
+                                             NomeVendedor        = ls_item-nome_vendedor
+                                             FrequenciaVisitas   = ls_item-frequencia_visitas
+                                             SequenciaVisita     = ls_item-sequencia_visita
+                                             DataVisita          = ls_item-data_visita
+                                             Latitude            = ls_item-latitude
+                                             Longitude           = ls_item-longitude
+                                           )
+                                         %control = VALUE #(
+                                             ItemID              = if_abap_behv=>mk-on
+                                             UploadID            = if_abap_behv=>mk-on
+                                             CodCliente          = if_abap_behv=>mk-on
+                                             NomeCliente         = if_abap_behv=>mk-on
+                                             Endereco            = if_abap_behv=>mk-on
+                                             Bairro              = if_abap_behv=>mk-on
+                                             Municipio           = if_abap_behv=>mk-on
+                                             Regiao              = if_abap_behv=>mk-on
+                                             Vendedor            = if_abap_behv=>mk-on
+                                             NomeVendedor        = if_abap_behv=>mk-on
+                                             FrequenciaVisitas   = if_abap_behv=>mk-on
+                                             SequenciaVisita     = if_abap_behv=>mk-on
+                                             DataVisita          = if_abap_behv=>mk-on
+                                             Latitude            = if_abap_behv=>mk-on
+                                             Longitude           = if_abap_behv=>mk-on
+                                           )
+                                       ) ) ) ).
+
+              " 10. Disparar a criação das entidades filhas (_Items) com os dados completos
+              MODIFY ENTITIES OF zr_is_upload_roteiro IN LOCAL MODE
+                ENTITY UploadRoteiro
+                CREATE BY \_Items
+                AUTO FILL CID
+                WITH lt_items_create
+                MAPPED DATA(lt_mapped_items)
+                FAILED DATA(lt_failed_items)
+                REPORTED DATA(lt_reported_items).
+
+
+              " Se houver falhas, reportar
+              IF lt_failed_items IS NOT INITIAL.
+                APPEND VALUE #(
+                  %tky = ls_upload-%tky
+                  %msg = new_message_with_text(
+                           severity = if_abap_behv_message=>severity-error
+                           text     = 'Erro ao criar itens filhos. Verifique os dados.' )
+                ) TO reported-uploadroteiro.
+              ENDIF.
+
+            ENDIF.
+
+          ELSE.
+            " Se o template for inválido, reportar erro
+            APPEND VALUE #(
+              %tky = ls_upload-%tky
+              %msg = new_message_with_text(
+                       severity = if_abap_behv_message=>severity-error
+                       text     = 'O template do arquivo Excel é inválido.' )
+            ) TO reported-uploadroteiro.
+          ENDIF.
+
+        CATCH cx_root.
+          " Em caso de erro fatal no processamento, reportar falha
+          APPEND VALUE #(
+            %tky = ls_upload-%tky
+            %msg = new_message_with_text(
+                     severity = if_abap_behv_message=>severity-error
+                     text     = 'Erro inesperado ao processar o arquivo Excel.' )
+          ) TO reported-uploadroteiro.
+      ENDTRY.
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+ENDCLASS.
